@@ -13,14 +13,24 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import {ArtworkLoader} from './artwork.js';
-import {formatTime, SpotifyPlayer} from './mpris.js';
+import {SpotifyPlayer} from './mpris.js';
 import {SoloistPlayer, soloistConfig} from './soloist.js';
 import {PlaylistLibrary} from './playlists.js';
+import {MediaBridge} from './media-bridge.js';
+import {PlaybackControls} from './player-controls.js';
+import {filterPlaylists} from './playlist-filter.js';
 
 function label(styleClass) {
     const actor = new St.Label({style_class: styleClass, y_align: Clutter.ActorAlign.CENTER});
     actor.clutter_text.ellipsize = Pango.EllipsizeMode.END;
     return actor;
+}
+
+function menuRow() {
+    const item = new PopupMenu.PopupBaseMenuItem({reactive: true, activate: false, hover: false, can_focus: false});
+    // The row itself is not clickable; its labels and child controls remain active.
+    item.remove_style_class_name('popup-inactive-menu-item');
+    return item;
 }
 
 function transportButton(icon, name, action, large = false) {
@@ -80,11 +90,16 @@ class SpotifyIndicator extends PanelMenu.Button {
 
         this._buildMenu();
         this._renderPlaylists();
-        this._settingsId = settings.connect('changed', () => this._render());
+        this._settingsId = settings.connect('changed', (_settings, key) => {
+            this._render();
+            if (key === 'pinned-playlists')
+                this._renderPlaylists();
+        });
         this._menuId = this._trackButton.menu.connect('open-state-changed', (_menu, open) => {
             this._stopTimer();
             if (open) {
                 this._player.refreshPosition();
+                this._player.refreshQueue?.();
                 this._updateProgress();
                 this._timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
                     this._updateProgress();
@@ -97,7 +112,7 @@ class SpotifyIndicator extends PanelMenu.Button {
 
     _buildMenu() {
         const menu = this._trackButton.menu;
-        const card = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+        const card = menuRow();
         const content = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL,
             style_class: 'gs-card', x_expand: true});
         const header = new St.BoxLayout({style_class: 'gs-header'});
@@ -117,12 +132,12 @@ class SpotifyIndicator extends PanelMenu.Button {
         this._status.clutter_text.line_wrap = true;
         this._status.clutter_text.single_line_mode = false;
         content.add_child(this._status);
-        this._time = label('gs-time');
-        content.add_child(this._time);
+        this._controls = new PlaybackControls(this._player);
+        content.add_child(this._controls.progress);
         card.add_child(content);
         menu.addMenuItem(card);
 
-        const controls = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+        const controls = menuRow();
         const controlsBox = new St.BoxLayout({style_class: 'gs-menu-controls',
             x_expand: true, x_align: Clutter.ActorAlign.CENTER});
         this._menuPrevious = transportButton('media-skip-backward-symbolic', 'Previous track',
@@ -135,10 +150,19 @@ class SpotifyIndicator extends PanelMenu.Button {
             controlsBox.add_child(button);
         controls.add_child(controlsBox);
         menu.addMenuItem(controls);
+        const options = menuRow();
+        options.add_child(this._controls.options);
+        menu.addMenuItem(options);
         menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         if (this._player.state.soloist) {
             this._playlistMenu = new PopupMenu.PopupSubMenuMenuItem('Playlists', true);
             this._playlistMenu.icon.icon_name = 'view-list-symbolic';
+            const search = menuRow();
+            this._playlistSearch = new St.Entry({hint_text: 'Search playlists',
+                accessible_name: 'Search playlists', can_focus: true, x_expand: true});
+            this._playlistSearch.clutter_text.connect('text-changed', () => this._renderPlaylists());
+            search.add_child(this._playlistSearch);
+            this._playlistMenu.menu.addMenuItem(search);
             this._playlistSync = this._playlistMenu.menu.addAction('Sync playlists', () =>
                 this._extension._playlists.sync());
             this._playlistStatus = new PopupMenu.PopupMenuItem('', {reactive: false, can_focus: false});
@@ -151,7 +175,14 @@ class SpotifyIndicator extends PanelMenu.Button {
             this._playlistMenu.menu.addMenuItem(this._playlistSection);
             this._playlistMenu.menu.addAction('Playlist preferences', () => this._extension.openPreferences());
             menu.addMenuItem(this._playlistMenu);
-            const linkRow = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+            this._upNext = new PopupMenu.PopupSubMenuMenuItem('Up Next', true);
+            this._upNext.icon.icon_name = 'view-list-symbolic';
+            this._upNext.menu.connect('open-state-changed', (_menu, open) => {
+                if (open)
+                    this._player.refreshQueue();
+            });
+            menu.addMenuItem(this._upNext);
+            const linkRow = menuRow();
             this._link = new St.Entry({hint_text: 'Paste a Spotify song or playlist link',
                 accessible_name: 'Spotify link', can_focus: true, x_expand: true,
                 style_class: 'gs-link'});
@@ -197,13 +228,59 @@ class SpotifyIndicator extends PanelMenu.Button {
         this._playlistSync.setSensitive(!library.busy && library.connected);
         this._playlistStatus.label.text = library.message;
         this._playlistSection.removeAll();
-        for (const playlist of library.playlists) {
-            const item = new PopupMenu.PopupMenuItem(playlist.name);
-            item.label.add_style_class_name('gs-playlist-name');
-            item.label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-            item.connect('activate', () => this._player.playUri(playlist.uri));
+        const pinned = this._settings.get_strv('pinned-playlists');
+        const playlists = filterPlaylists(library.playlists, pinned, this._playlistSearch.get_text());
+        let previousGroup = null;
+        for (const playlist of playlists) {
+            const group = playlist.pinned ? 'Favorites' : 'All playlists';
+            if (group !== previousGroup) {
+                const heading = new PopupMenu.PopupMenuItem(group, {reactive: false, can_focus: false});
+                heading.add_style_class_name('gs-list-heading');
+                this._playlistSection.addMenuItem(heading);
+                previousGroup = group;
+            }
+            const item = menuRow();
+            const name = label('gs-playlist-name');
+            name.text = playlist.name;
+            const open = new St.Button({style_class: 'gs-playlist-open', child: name,
+                accessible_name: `Play ${playlist.name}`, can_focus: true, x_expand: true});
+            open.connect('clicked', () => {
+                if (this._player.playUri(playlist.uri))
+                    this._trackButton.menu.close();
+            });
+            const pin = new St.Button({style_class: 'gs-transport', can_focus: true,
+                accessible_name: `${playlist.pinned ? 'Unpin' : 'Pin'} playlist ${playlist.name}`,
+                child: new St.Icon({icon_name: playlist.pinned ? 'starred-symbolic' : 'non-starred-symbolic', icon_size: 16})});
+            pin.connect('clicked', () => {
+                const favorites = this._settings.get_strv('pinned-playlists');
+                this._settings.set_strv('pinned-playlists', playlist.pinned
+                    ? favorites.filter(uri => uri !== playlist.uri) : [...favorites, playlist.uri]);
+            });
+            item.add_child(open);
+            item.add_child(pin);
             this._playlistSection.addMenuItem(item);
         }
+        if (!playlists.length) {
+            this._playlistSection.addMenuItem(new PopupMenu.PopupMenuItem(library.playlists.length
+                ? 'No matching playlists' : 'No playlists saved yet', {reactive: false, can_focus: false}));
+        }
+    }
+
+    _renderQueue(state) {
+        if (!this._upNext || this._shownQueue === state.upNext)
+            return;
+        this._shownQueue = state.upNext;
+        this._upNext.menu.removeAll();
+        for (const [index, track] of state.upNext.entries()) {
+            const item = new PopupMenu.PopupMenuItem(`${index + 1}. ${track.title}${track.artist ? ` — ${track.artist}` : ''}`,
+                {reactive: false, can_focus: false});
+            item.remove_style_class_name('popup-inactive-menu-item');
+            item.label.add_style_class_name('gs-playlist-name');
+            item.label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+            this._upNext.menu.addMenuItem(item);
+        }
+        if (!state.upNext.length)
+            this._upNext.menu.addMenuItem(new PopupMenu.PopupMenuItem('Nothing queued yet', {reactive: false, can_focus: false}));
     }
 
     _render() {
@@ -231,6 +308,7 @@ class SpotifyIndicator extends PanelMenu.Button {
             this._activateItem.visible = state.connected && state.loggedIn && !state.active;
             this._startItem.visible = !state.connected && !state.managed;
             this._stopItem.visible = state.managed;
+            this._renderQueue(state);
         }
         this._album.text = state.album;
         this._album.visible = Boolean(state.album);
@@ -245,7 +323,7 @@ class SpotifyIndicator extends PanelMenu.Button {
             this._setSensitive(button, state.canPrevious);
         for (const button of [this._next, this._menuNext])
             this._setSensitive(button, state.canNext);
-        this._updateProgress();
+        this._controls.update(state);
         this._loadArtwork(state.artUrl);
     }
 
@@ -259,10 +337,7 @@ class SpotifyIndicator extends PanelMenu.Button {
     }
 
     _updateProgress() {
-        const state = this._player.state;
-        this._time.visible = state.connected && state.duration > 0;
-        if (this._time.visible)
-            this._time.text = `${formatTime(this._player.position)}  /  ${formatTime(state.duration)}`;
+        this._controls.updateProgress();
     }
 
     _loadArtwork(url) {
@@ -289,6 +364,7 @@ class SpotifyIndicator extends PanelMenu.Button {
     destroy() {
         this._alive = false;
         this._stopTimer();
+        this._controls.destroy();
         this._settings.disconnect(this._settingsId);
         this._artwork.destroy();
         this._trackButton.menu.disconnect(this._menuId);
@@ -307,19 +383,53 @@ export default class GnomeSpotifyExtension extends Extension {
         this._positionId = this._settings.connect('changed::panel-position', () => this._rebuild());
         this._playerIds = ['playback-source', 'soloist-revision', 'soloist-autostart'].map(key =>
             this._settings.connect(`changed::${key}`, () => this._replacePlayer()));
+        this._mediaSettingId = this._settings.connect('changed::media-key-support', () => this._replaceMediaBridge());
+        this._resumeCancellable = new Gio.Cancellable();
+        const resumeCancellable = this._resumeCancellable;
+        Gio.bus_get(Gio.BusType.SYSTEM, resumeCancellable, (_source, result) => {
+            let connection;
+            try { connection = Gio.bus_get_finish(result); } catch { return; }
+            if (resumeCancellable.is_cancelled())
+                return;
+            this._systemBus = connection;
+            this._sleepId = connection.signal_subscribe('org.freedesktop.login1',
+                'org.freedesktop.login1.Manager', 'PrepareForSleep', '/org/freedesktop/login1',
+                null, Gio.DBusSignalFlags.NONE, (_bus, _sender, _path, _iface, _signal, parameters) => {
+                    if (!parameters.deep_unpack()[0])
+                        this._player?.resume();
+                });
+        });
         this._replacePlayer();
     }
 
     _replacePlayer() {
         this._indicator?.destroy();
         this._indicator = null;
+        this._mediaBridge?.destroy();
+        this._mediaBridge = null;
         this._player?.destroy();
-        const onChanged = () => this._indicator?._render();
+        const onChanged = () => {
+            this._mediaBridge?.update();
+            this._indicator?._render();
+        };
         const onError = message => Main.notify('Gnome Spotify', message);
         this._player = this._settings.get_string('playback-source') === 'soloist'
             ? new SoloistPlayer(soloistConfig(this._settings, this.path), onChanged, onError)
             : new SpotifyPlayer(onChanged, onError);
+        this._replaceMediaBridge();
         this._rebuild();
+    }
+
+    _replaceMediaBridge() {
+        this._mediaBridge?.destroy();
+        this._mediaBridge = null;
+        if (this._player?.state.soloist && this._settings.get_boolean('media-key-support')) {
+            this._mediaBridge = new MediaBridge(this._player, () => {
+                if (this._indicator?.visible)
+                    this._indicator._trackButton.menu.open();
+            }, message => Main.notify('Gnome Spotify', message));
+            this._mediaBridge.update();
+        }
     }
 
     _rebuild() {
@@ -333,11 +443,19 @@ export default class GnomeSpotifyExtension extends Extension {
 
     disable() {
         this._settings.disconnect(this._positionId);
+        this._settings.disconnect(this._mediaSettingId);
+        this._resumeCancellable.cancel();
+        if (this._sleepId)
+            this._systemBus.signal_unsubscribe(this._sleepId);
+        this._sleepId = 0;
+        this._systemBus = null;
         Main.sessionMode.disconnect(this._sessionId);
         for (const id of this._playerIds)
             this._settings.disconnect(id);
         this._indicator?.destroy();
         this._indicator = null;
+        this._mediaBridge?.destroy();
+        this._mediaBridge = null;
         this._player.destroy();
         this._player = null;
         this._playlists.destroy();

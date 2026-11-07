@@ -12,10 +12,12 @@ check: schemas/gschemas.compiled
 	glib-compile-schemas --strict --dry-run schemas
 	@for file in *.js; do node --input-type=module --check < "$$file" || exit 1; done
 	dbus-run-session -- gjs -m tests/mpris.test.js
+	dbus-run-session -- gjs -m tests/media-bridge.test.js
 	gjs -m tests/artwork.test.js
 	gjs -m tests/soloist.test.js
 	gjs -m tests/spotify-api.test.js
 	GSETTINGS_BACKEND=memory gjs -m tests/playlists.test.js
+	gjs -m tests/playlist-filter.test.js
 
 package: schemas/gschemas.compiled
 	python3 scripts/package.py

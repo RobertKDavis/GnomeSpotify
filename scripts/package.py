@@ -11,6 +11,7 @@ destination.parent.mkdir(exist_ok=True)
 files = ['metadata.json', 'extension.js', 'mpris.js', 'artwork.js', 'prefs.js',
          'soloist.js', 'soloist-state.js', 'soloist-process.js', 'soloist-runner.js', 'soloist-secrets.js',
          'spotify-api.js', 'playlist-secrets.js', 'playlist-worker.js', 'playlist-job.js', 'playlists.js',
+         'media-bridge.js', 'player-controls.js', 'playlist-filter.js',
          'stylesheet.css', 'LICENSE', 'schemas/gschemas.compiled',
          'schemas/org.gnome.shell.extensions.gnome-spotify.gschema.xml']
 with ZipFile(destination, 'w', ZIP_DEFLATED) as archive:

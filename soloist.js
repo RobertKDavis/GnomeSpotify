@@ -50,6 +50,7 @@ export class SoloistPlayer {
         this._destroyed = false;
         this._connecting = false;
         this._attemptedStart = false;
+        this._recoveringError = false;
         this._message = 'Connecting to Soloist…';
         this._timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
             this._tryConnect();
@@ -96,6 +97,8 @@ export class SoloistPlayer {
             }
             this._socket = socket;
             socket.set_max_incoming_payload_size(1024 * 1024);
+            socket.set_keepalive_interval(15);
+            socket.set_keepalive_pong_timeout?.(5);
             this._model.connected = true;
             this._socketSignals = [
                 socket.connect('message', (_socket, type, data) => {
@@ -125,12 +128,23 @@ export class SoloistPlayer {
         if (!event || typeof event !== 'object')
             return;
         if (event.type === 'error') {
-            this._onError('Soloist could not complete that command. Check that this computer is paired and active.');
+            if (!this._recoveringError) {
+                this._recoveringError = true;
+                this._send('get_auth_state');
+                this._onError('Soloist could not complete that command. Check that this computer is paired and active.');
+            }
             return;
         }
+        if (event.type === 'playback_state' || (event.type === 'auth_state' && !event.logged_in))
+            this._recoveringError = false;
+        const oldTrack = this._model.state.trackId;
         this._model.consume(event);
         if ((event.type === 'auth_state' && event.logged_in) ||
             ['track_changed', 'playback_changed', 'device_changed', 'options_changed'].includes(event.type))
+            this.refreshPosition();
+        if ((event.type === 'auth_state' && event.logged_in) || oldTrack !== this._model.state.trackId)
+            this.refreshQueue();
+        if (event.type === 'command_result')
             this.refreshPosition();
         this._onChanged();
     }
@@ -147,6 +161,8 @@ export class SoloistPlayer {
             Previous: state.canPrevious ? 'skip_prev' : null,
             Next: state.canNext ? 'skip_next' : null,
             PlayPause: state.canPlayPause ? state.playing ? 'pause' : 'play' : null,
+            Play: state.canPlay && !state.playing ? 'play' : null,
+            Pause: state.canPause && state.playing ? 'pause' : null,
         }[method];
         if (command)
             this._send(command);
@@ -169,6 +185,64 @@ export class SoloistPlayer {
     activate() {
         if (this.state.loggedIn)
             this._send('activate');
+    }
+
+    setVolume(value) {
+        if (this.state.canVolume && Number.isFinite(value)) {
+            const volume = Math.round(Math.max(0, Math.min(1, value)) * 100);
+            this._send('set_volume', {volume});
+            this._model.consume({type: 'volume_changed', volume});
+            this._onChanged();
+        }
+    }
+
+    setShuffle(enabled) {
+        if (this.state.canShuffle) {
+            this._send('set_shuffle', {enabled: Boolean(enabled)});
+            this._model.consume({type: 'options_changed', options: {...this._model.options, shuffle: Boolean(enabled)}});
+            this._onChanged();
+        }
+    }
+
+    setRepeat(mode) {
+        if (!this.state.canRepeat || !['off', 'context', 'track'].includes(mode))
+            return;
+        // Turn off the other mode first, as required by Soloist's command API.
+        if (mode === 'track') {
+            this._send('set_repeat_context', {enabled: false});
+            this._send('set_repeat_track', {enabled: true});
+        } else {
+            this._send('set_repeat_track', {enabled: false});
+            this._send('set_repeat_context', {enabled: mode === 'context'});
+        }
+        this._model.consume({type: 'options_changed', options: {...this._model.options, repeat: mode}});
+        this._onChanged();
+    }
+
+    seekTo(position, trackId = this.state.trackId) {
+        const state = this.state;
+        if (state.canSeek && state.trackId === trackId && Number.isFinite(position)) {
+            const positionMs = Math.round(Math.max(0, Math.min(state.duration, position)) / 1000);
+            this._send('seek', {position_ms: positionMs});
+            this._model.consume({type: 'position_sync', position: {position_ms: positionMs,
+                timestamp_ms: Date.now(), speed: state.playing ? state.rate : 0}});
+            this._onChanged();
+        }
+    }
+
+    refreshQueue() {
+        if (this._model.loggedIn)
+            this._send('get_queue', {limit: 5});
+    }
+
+    resume() {
+        if (this._socket) {
+            this._send('get_auth_state');
+            this.refreshPosition();
+            this.refreshQueue();
+        } else {
+            this._tryConnect();
+        }
     }
 
     refreshPosition() {
@@ -255,6 +329,7 @@ export class SoloistPlayer {
         }
         this._socketSignals = [];
         this._socket = null;
+        this._recoveringError = false;
         this._model.disconnect();
         if (!this._destroyed)
             this._onChanged();

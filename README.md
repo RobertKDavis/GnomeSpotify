@@ -6,9 +6,12 @@ playback through Spotify Soloist, without a Spotify window.
 
 - Current song and optional artist, with a configurable title width.
 - Previous, play/pause, and next buttons directly in the top bar.
+- Volume slider, shuffle, repeat off/all/one, and a draggable playback position bar.
 - Optional small album cover; larger cover, artist, album, and elapsed/total time in the dropdown.
 - Soloist startup/shutdown, pairing status, and playback from a pasted Spotify link.
 - Named playlist picker, with optional Spotify library sync at startup and a manual Sync button.
+- Local playlist search and pinned favorites, plus the next five queued tracks in Soloist mode.
+- Keyboard/headset media controls and GNOME now-playing integration for active Soloist playback.
 - Open Spotify from the dropdown in desktop-app mode, including when it is closed.
 - Left (after existing icons), center, or right panel placement, and an option to hide when Spotify closes.
 - Automatic reconnection when Spotify restarts; controls follow the player's reported capabilities.
@@ -20,7 +23,7 @@ permission overrides. Spotify must be running on this desktop in that mode.
 Soloist mode talks to a loopback WebSocket endpoint and uses your own Soloist API
 key. Playback does not need a Spotify Web API app. Optional playlist syncing uses
 a separate Web API app and browser sign-in, as described below.
-The web player, track/library browsing beyond the playlist list, and seeking from the panel are not included.
+The web player and track/library browsing beyond the playlist list and Up Next are not included.
 Artwork is fetched from the URL provided by the player, kept in memory, and
 replaced with a music icon if unavailable. Position display timers only run
 while the dropdown is open. Changing panel position does not restart playback.
@@ -94,6 +97,45 @@ and cache directory, `~/.cache/soloist`, respecting the corresponding XDG direct
 settings. It limits its playback cache to 512 MB. Avoid starting a second Soloist
 instance using the same data directory. An independently managed instance must
 have its WebSocket API enabled on `127.0.0.1` for the extension to attach to it.
+
+### Everyday playback controls
+
+- Drag the progress bar to seek within the current track or episode. Arrow keys
+  and scrolling also work when the slider has focus. A seek is discarded if the
+  track changes while you are dragging, so the new track is not moved accidentally.
+- Use the volume slider for Spotify's playback level. Select headphones or
+  speakers in Fedora's Sound settings.
+- **Shuffle** toggles shuffle. **Repeat** cycles through **Off**, **All** (the
+  current playlist/context), and **One** (the current track). Active options are
+  highlighted. Controls follow the capabilities reported by the player.
+- Open **Playlists** and type in **Search playlists** to filter the cached list
+  locally. Click a star to pin or unpin a playlist. Favorites appear first and are
+  saved across restarts. Searching and pinning never trigger a playlist sync.
+- Open **Up Next** to see the next five queued tracks. This list updates from
+  Soloist playback events and refreshes when opened.
+
+Volume, shuffle, repeat, and seeking also work in desktop-app mode when supported
+by Spotify's MPRIS interface. Playlist favorites/search and Up Next are available
+in Soloist mode.
+
+### Media keys and sleep/wake
+
+**Preferences → Playback → Keyboard and headset controls** is enabled by default.
+While Soloist is paired and active, the extension publishes the standard MPRIS
+interface as `org.mpris.MediaPlayer2.GnomeSpotify`. This lets GNOME route media
+keys and expose now-playing information through its system media UI. No global
+keyboard shortcuts are grabbed. The interface is removed when Soloist disconnects,
+becomes inactive, or the feature is disabled.
+
+Changing this preference does not restart playback. Screen locking keeps Soloist
+and its media controls available while hiding the extension's panel UI. On resume
+from sleep, the extension refreshes Soloist authentication, playback, and queue
+state. This does not sync your Spotify playlists. Local connection keepalive
+and reconnection handle a dropped Soloist connection.
+
+Physical headset buttons, suspend/resume, and switching audio outputs should be
+checked on your own Fedora session after installation. Automated checks use a
+mock player and do not suspend the computer or change its real audio output.
 
 ### Key and local control security
 
@@ -194,6 +236,11 @@ PKCE, callback state validation, cancellation, token refresh and rotation,
 pagination, rate limits, and redirect protection. Playlist cache tests use
 memory-only GSettings and temporary files to check startup/manual sync, offline
 retention, account changes, and private cache permissions.
+Media interface checks run on an isolated D-Bus session and verify the same
+commands GNOME media keys use, now-playing metadata, volume/shuffle/repeat,
+track-specific seeking, and registration cleanup. Soloist checks cover queue
+events, extended controls, stale seeks, and resume refresh. Playlist filtering
+checks cover favorites, accents, case-insensitive matching, and natural sorting.
 
 These automated checks do not render GNOME Shell. A live GNOME 51 session is
 needed to verify panel layout, focus/keyboard navigation, preferences, remote
@@ -207,6 +254,10 @@ separation, worker serialization, cancellation, and disconnect were checked with
 fake tokens. Real Spotify account authorization requires your own Client ID and
 browser sign-in. Soloist pairing and audio playback require your personal key
 and session.
+An active mock player in GNOME 51.1 also verified the volume and progress sliders,
+shuffle/repeat buttons, search and pinning, Up Next, media commands while locked,
+resume refresh, and cancellation of pending slider writes when controls are
+destroyed. UI rendering itself did not send playback commands.
 
 Manual checks after installation:
 
@@ -229,6 +280,13 @@ Manual checks after installation:
     after changing your Spotify playlists. Test offline startup with a cached list.
 12. Disconnect playlist sync and confirm the cached list is cleared while Soloist
     playback continues.
+13. Try volume, shuffle, each repeat mode, and seeking. Change tracks during a
+    seek gesture; the new track should keep its own position.
+14. Search and star playlists, reopen the menu, and restart the extension. Check
+    that favorites stay pinned and the playlist sync timestamp does not change
+    just from searching or pinning.
+15. Check the Up Next list, keyboard/headset play/pause/skip controls, and the
+    media-key preference. Test sleep/wake and changing headphones/speakers.
 
 ## Troubleshooting
 

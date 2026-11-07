@@ -128,6 +128,17 @@ export class SpotifyPlayer {
             album: metadata['xesam:album'] ?? '',
             artUrl: metadata['mpris:artUrl'] ?? '',
             duration: metadata['mpris:length'] ?? 0,
+            trackId: metadata['mpris:trackid'] ?? '',
+            rate: this._get('Rate', 1),
+            volume: this._get('Volume', 0),
+            shuffle: this._get('Shuffle', false),
+            repeat: {None: 'off', Playlist: 'context', Track: 'track'}[this._get('LoopStatus', 'None')] ?? 'off',
+            canPlay: canControl && this._get('CanPlay', false),
+            canPause: canControl && this._get('CanPause', false),
+            canSeek: canControl && this._get('CanSeek', false),
+            canVolume: canControl && this._get('Volume', null) !== null,
+            canShuffle: canControl && this._get('Shuffle', null) !== null,
+            canRepeat: canControl && this._get('LoopStatus', null) !== null,
             canPrevious: canControl && this._get('CanGoPrevious', false),
             canNext: canControl && this._get('CanGoNext', false),
             canPlayPause: canControl && this._get(this._playing ? 'CanPause' : 'CanPlay', false),
@@ -145,6 +156,39 @@ export class SpotifyPlayer {
     raise() {
         if (this._proxy)
             this._call('org.mpris.MediaPlayer2', 'Raise', null);
+    }
+
+    _set(name, type, value) {
+        this._call('org.freedesktop.DBus.Properties', 'Set',
+            new GLib.Variant('(ssv)', [PLAYER_IFACE, name, new GLib.Variant(type, value)]));
+    }
+
+    setVolume(value) {
+        if (this.state.canVolume && Number.isFinite(value))
+            this._set('Volume', 'd', Math.max(0, Math.min(1, value)));
+    }
+
+    setShuffle(enabled) {
+        if (this.state.canShuffle)
+            this._set('Shuffle', 'b', Boolean(enabled));
+    }
+
+    setRepeat(mode) {
+        const status = {off: 'None', context: 'Playlist', track: 'Track'}[mode];
+        if (this.state.canRepeat && status)
+            this._set('LoopStatus', 's', status);
+    }
+
+    seekTo(position, trackId = this.state.trackId) {
+        const state = this.state;
+        if (state.canSeek && state.trackId === trackId && trackId.startsWith('/') && Number.isFinite(position)) {
+            this._call(PLAYER_IFACE, 'SetPosition', new GLib.Variant('(ox)',
+                [trackId, Math.round(Math.max(0, Math.min(state.duration || position, position)))]));
+        }
+    }
+
+    resume() {
+        this.refreshPosition();
     }
 
     _call(iface, method, parameters, callback = null) {

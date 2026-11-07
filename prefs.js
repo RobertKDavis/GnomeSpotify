@@ -192,6 +192,10 @@ export default class GnomeSpotifyPreferences extends ExtensionPreferences {
             source.selected = sources.indexOf(settings.get_string('playback-source'));
         });
         sourceGroup.add(source);
+        const mediaKeys = new Adw.SwitchRow({title: 'Keyboard and headset controls',
+            subtitle: 'Let GNOME media keys and system media controls operate the active Soloist player'});
+        settings.bind('media-key-support', mediaKeys, 'active', Gio.SettingsBindFlags.DEFAULT);
+        sourceGroup.add(mediaKeys);
 
         const group = new Adw.PreferencesGroup({title: 'Soloist setup',
             description: 'Plays audio on this computer. Pair once by selecting this device in Spotify on your phone.'});

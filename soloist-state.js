@@ -8,6 +8,21 @@ export function spotifyUri(input) {
     return match ? `spotify:${match[1].toLowerCase()}:${match[2]}` : null;
 }
 
+export function entityDetails(entity) {
+    const decorations = entity?.decorations ?? {};
+    const covers = Array.isArray(decorations.visual_identity?.cover) ? decorations.visual_identity.cover : [];
+    const cover = covers.find(image => image.size === 'large') ?? covers[0];
+    return {
+        trackId: entity?.uri ?? '',
+        title: decorations.identity?.name || 'Soloist',
+        artist: (Array.isArray(decorations.creators) ? decorations.creators : []).map(creator =>
+            creator.entity?.decorations?.identity?.name).filter(Boolean).join(', '),
+        album: decorations.parent?.entity?.decorations?.identity?.name ?? '',
+        artUrl: cover?.url ?? '',
+        duration: Math.max(0, decorations.playback?.duration_ms ?? 0) * 1000,
+    };
+}
+
 export class SoloistState {
     constructor(now = Date.now) {
         this._now = now;
@@ -21,6 +36,9 @@ export class SoloistState {
         this.item = null;
         this.status = 'idle';
         this.actions = {};
+        this.volume = 0;
+        this.options = {};
+        this.upNext = [];
         this._position = 0;
         this._timestamp = this._now();
         this._speed = 0;
@@ -44,6 +62,8 @@ export class SoloistState {
             this.status = event.status ?? 'idle';
             this.active = Boolean(event.is_active);
             this.actions = event.available_actions ?? {};
+            this.volume = Number.isFinite(event.volume) ? Math.max(0, Math.min(1, event.volume / 100)) : this.volume;
+            this.options = event.options ?? this.options;
             this._anchor(event.position);
             break;
         case 'track_changed':
@@ -61,6 +81,17 @@ export class SoloistState {
         }
         case 'device_changed':
             this.active = Boolean(event.is_active);
+            break;
+        case 'volume_changed':
+            if (Number.isFinite(event.volume))
+                this.volume = Math.max(0, Math.min(1, event.volume / 100));
+            break;
+        case 'options_changed':
+            this.options = event.options ?? {};
+            break;
+        case 'queue_changed':
+            this.upNext = (Array.isArray(event.upcoming) ? event.upcoming : [])
+                .slice(0, 5).map(entry => entityDetails(entry?.item));
             break;
         case 'position_sync':
             this._anchor(event.position);
@@ -83,9 +114,7 @@ export class SoloistState {
     }
 
     get state() {
-        const decorations = this.item?.decorations ?? {};
-        const covers = decorations.visual_identity?.cover ?? [];
-        const cover = covers.find(image => image.size === 'large') ?? covers[0];
+        const details = entityDetails(this.item);
         const playing = this.status === 'playing';
         const ready = this.connected && this.loggedIn && this.active;
         return {
@@ -93,12 +122,18 @@ export class SoloistState {
             loggedIn: this.loggedIn,
             active: this.active,
             playing,
-            title: decorations.identity?.name || 'Soloist',
-            artist: (decorations.creators ?? []).map(creator =>
-                creator.entity?.decorations?.identity?.name).filter(Boolean).join(', '),
-            album: decorations.parent?.entity?.decorations?.identity?.name ?? '',
-            artUrl: cover?.url ?? '',
-            duration: Math.max(0, decorations.playback?.duration_ms ?? 0) * 1000,
+            ...details,
+            volume: this.volume,
+            shuffle: Boolean(this.options.shuffle),
+            repeat: ['off', 'context', 'track'].includes(this.options.repeat) ? this.options.repeat : 'off',
+            rate: this.options.playback_speed > 0 ? this.options.playback_speed : 1,
+            upNext: this.upNext,
+            canPlay: ready && Object.hasOwn(this.actions, 'play'),
+            canPause: ready && Object.hasOwn(this.actions, 'pause'),
+            canSeek: ready && details.duration > 0 && Object.hasOwn(this.actions, 'seek'),
+            canVolume: ready,
+            canShuffle: ready && Object.hasOwn(this.actions, 'shuffle'),
+            canRepeat: ready && Object.hasOwn(this.actions, 'set_repeat'),
             canPrevious: ready && Object.hasOwn(this.actions, 'skip_prev'),
             canNext: ready && Object.hasOwn(this.actions, 'skip_next'),
             canPlayPause: ready && Object.hasOwn(this.actions, playing ? 'pause' : 'play'),

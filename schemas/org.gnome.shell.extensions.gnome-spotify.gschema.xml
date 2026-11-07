@@ -26,6 +26,14 @@
       <default>'desktop'</default>
       <summary>Spotify desktop app or local Soloist player</summary>
     </key>
+    <key name="media-key-support" type="b">
+      <default>true</default>
+      <summary>Expose active Soloist playback to GNOME media keys and media controls</summary>
+    </key>
+    <key name="pinned-playlists" type="as">
+      <default>[]</default>
+      <summary>Playlist URIs pinned above the rest of the local playlist picker</summary>
+    </key>
     <key name="soloist-path" type="s">
       <default>'~/Programs/soloist_release_x86_64/soloist'</default>
       <summary>Path to the installed Soloist executable</summary>

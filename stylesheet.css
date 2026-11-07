@@ -21,3 +21,15 @@
 .gs-link { min-width: 260px; }
 .gs-playlist-name { max-width: 320px; }
 .gs-playlist-status { max-width: 320px; font-size: 0.9em; opacity: 0.75; }
+.gs-progress { spacing: 6px; }
+.gs-playback-options { width: 350px; spacing: 12px; }
+.gs-option-row { spacing: 16px; }
+.gs-option { border-radius: 10px; padding: 6px 12px; }
+.gs-option-label { spacing: 6px; }
+.gs-option:hover, .gs-option:focus { background-color: rgba(255, 255, 255, 0.12); }
+.gs-option:checked { background-color: rgba(30, 215, 96, 0.2); color: #1ed760; }
+.gs-volume-row { spacing: 12px; }
+.gs-volume-value { min-width: 42px; text-align: right; }
+.gs-playlist-open { padding: 3px 6px; border-radius: 6px; text-align: left; }
+.gs-playlist-open:hover, .gs-playlist-open:focus { background-color: rgba(255, 255, 255, 0.12); }
+.gs-list-heading { font-weight: bold; font-size: 0.9em; opacity: 0.7; }

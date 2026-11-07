@@ -14,6 +14,7 @@ export const PLAYLIST_ERRORS = {
     denied: 'Spotify sign-in was declined. You can connect again when ready.',
     timeout: 'Spotify sign-in timed out. Click Connect Spotify to try again.',
     browser: 'Could not open your browser for Spotify sign-in.',
+    'callback-port': 'Could not open the local sign-in callback on port 8000. Close the application using that port and try again.',
     cancelled: 'Spotify sign-in or syncing was cancelled.',
     request: 'Could not complete playlist syncing. Try again from Preferences → Playlists.',
 };

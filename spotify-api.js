@@ -3,7 +3,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Soup from 'gi://Soup?version=3.0';
 
-export const REGISTERED_REDIRECT = 'http://127.0.0.1/callback';
+export const REGISTERED_REDIRECT = 'http://127.0.0.1:8000/callback';
 export const PLAYLIST_SCOPE = 'playlist-read-private';
 
 export class ApiError extends Error {
@@ -43,7 +43,7 @@ export function pkceChallenge(verifier) {
 export class SpotifyApi {
     constructor(clientId, store, {tokenUrl = 'https://accounts.spotify.com/api/token',
         authorizeUrl = 'https://accounts.spotify.com/authorize',
-        apiUrl = 'https://api.spotify.com/v1', session = null} = {}) {
+        apiUrl = 'https://api.spotify.com/v1', session = null, callbackPort = 8000} = {}) {
         if (!validClientId(clientId))
             throw new ApiError('client-id');
         this.clientId = clientId;
@@ -51,6 +51,7 @@ export class SpotifyApi {
         this._tokenUrl = tokenUrl;
         this._authorizeUrl = authorizeUrl;
         this._apiUrl = apiUrl;
+        this._callbackPort = callbackPort;
         this._session = session ?? new Soup.Session({timeout: 20});
         this._accessToken = null;
     }
@@ -98,7 +99,8 @@ export class SpotifyApi {
         if (typeof refresh !== 'string' || !refresh)
             throw new ApiError('authorization');
         try {
-            await this._store.save(this.clientId, refresh, cancellable);
+            if (await this._store.save(this.clientId, refresh, cancellable) === false)
+                throw new Error('Keyring write failed');
         } catch {
             throw new ApiError(cancellable?.is_cancelled() ? 'cancelled' : 'keyring');
         }
@@ -142,9 +144,9 @@ export class SpotifyApi {
             }
         };
         server.add_handler('/callback', (_server, message, path, query) => {
-            message.response_headers.replace('Cache-Control', 'no-store');
-            message.response_headers.replace('Referrer-Policy', 'no-referrer');
-            message.response_headers.replace('Content-Security-Policy', "default-src 'none'");
+            message.get_response_headers().replace('Cache-Control', 'no-store');
+            message.get_response_headers().replace('Referrer-Policy', 'no-referrer');
+            message.get_response_headers().replace('Content-Security-Policy', "default-src 'none'");
             const matches = !settled && path === '/callback' && message.get_method() === 'GET' &&
                 message.get_uri().get_host() === '127.0.0.1' && query?.state === state;
             const accepted = matches && (typeof query.code === 'string' || typeof query.error === 'string');
@@ -161,7 +163,8 @@ export class SpotifyApi {
             }
         });
         try {
-            server.listen_local(0, Soup.ServerListenOptions.IPV4_ONLY);
+            try { server.listen_local(this._callbackPort, Soup.ServerListenOptions.IPV4_ONLY); }
+            catch { throw new ApiError('callback-port'); }
             const redirect = `http://127.0.0.1:${server.get_uris()[0].get_port()}/callback`;
             const url = `${this._authorizeUrl}?${Soup.form_encode_hash({
                 client_id: this.clientId, response_type: 'code', redirect_uri: redirect,

@@ -1,6 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
   <schema id="org.gnome.shell.extensions.gnome-spotify" path="/org/gnome/shell/extensions/gnome-spotify/">
+    <key name="spotify-client-id" type="s">
+      <default>''</default>
+      <summary>Public Client ID of your Spotify Web API app for playlist syncing</summary>
+    </key>
+    <key name="spotify-connected" type="b">
+      <default>false</default>
+      <summary>Whether playlist sign-in completed successfully</summary>
+    </key>
+    <key name="spotify-account-revision" type="u">
+      <default>0</default>
+      <summary>Playlist account connection changes</summary>
+    </key>
+    <key name="spotify-sync-request" type="u">
+      <default>0</default>
+      <summary>Explicit request to sync playlists</summary>
+    </key>
+    <key name="playlist-sync-status" type="s">
+      <default>'Connect Spotify to sync your playlists.'</default>
+      <summary>Playlist sync status without authentication credentials</summary>
+    </key>
     <key name="playback-source" type="s">
       <choices><choice value="desktop"/><choice value="soloist"/></choices>
       <default>'desktop'</default>

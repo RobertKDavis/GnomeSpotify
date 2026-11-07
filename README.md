@@ -8,6 +8,7 @@ playback through Spotify Soloist, without a Spotify window.
 - Previous, play/pause, and next buttons directly in the top bar.
 - Optional small album cover; larger cover, artist, album, and elapsed/total time in the dropdown.
 - Soloist startup/shutdown, pairing status, and playback from a pasted Spotify link.
+- Named playlist picker, with optional Spotify library sync at startup and a manual Sync button.
 - Open Spotify from the dropdown in desktop-app mode, including when it is closed.
 - Left (after existing icons), center, or right panel placement, and an option to hide when Spotify closes.
 - Automatic reconnection when Spotify restarts; controls follow the player's reported capabilities.
@@ -17,8 +18,9 @@ That mode needs no Spotify API key, additional login, playerctl, or Flatpak
 permission overrides. Spotify must be running on this desktop in that mode.
 
 Soloist mode talks to a loopback WebSocket endpoint and uses your own Soloist API
-key. It does not use Spotify's Web API or need a separate Web API app registration.
-The web player, library browsing, and seeking from the panel are not included.
+key. Playback does not need a Spotify Web API app. Optional playlist syncing uses
+a separate Web API app and browser sign-in, as described below.
+The web player, track/library browsing beyond the playlist list, and seeking from the panel are not included.
 Artwork is fetched from the URL provided by the player, kept in memory, and
 replaced with a music icon if unavailable. Position display timers only run
 while the dropdown is open. Changing panel position does not restart playback.
@@ -115,6 +117,64 @@ Replace the executable at the configured path, then click **Apply and use Solois
 If Soloist reports an expired build (exit code 10), the extension shows an update
 message. It does not automatically download executables or redistribute Soloist.
 
+## Sync your playlists
+
+Playlist syncing is separate from Soloist playback. Keep your Soloist key and
+pairing as they are. To load the playlists owned or followed by your account:
+
+1. Open the [Spotify for Developers dashboard](https://developer.spotify.com/dashboard)
+   and create an app for personal use. Select **Web API** when asked which APIs
+   you will use. Make sure your own Spotify account can use the app under its
+   development-mode user settings.
+2. Register this redirect URI exactly:
+
+   ```text
+   http://127.0.0.1:8000/callback
+   ```
+
+   The sign-in helper temporarily listens on port 8000 on this computer. No
+   public website or server is needed, and `localhost` should not be used. If
+   another application is using port 8000, close it while signing in.
+3. Copy the app's **Client ID**. You do not need its client secret.
+4. After installing this version and logging back in, open extension
+   **Preferences → Playlists**. Enter the Client ID and click **Connect Spotify**.
+5. Complete the browser sign-in. The app requests `playlist-read-private` so it
+   can list your playlists. Return to Preferences to confirm the connection.
+6. Open the panel dropdown and expand **Playlists**. Click a playlist name to
+   play it through Soloist. Soloist must be paired and active on this computer.
+
+The list syncs **once when the extension starts**, immediately after you connect,
+and when you click **Sync playlists** in the panel or **Sync now** in Preferences.
+There is no periodic playlist sync. Moving the panel, changing tracks, opening
+the dropdown, and locking/unlocking the screen do not trigger syncing.
+
+All pages of Spotify's playlist list are fetched before replacing the saved
+list. Network failures and rate limits keep the previous list available. Names
+and Spotify URIs are cached privately at `~/.cache/gnome-spotify/playlists.json`
+(respecting `XDG_CACHE_HOME`), so you can use the saved list between syncs.
+The pasted-link field remains available for other playable Spotify links.
+
+### Playlist login security
+
+- Sign-in uses Authorization Code with PKCE (S256), a random OAuth state, and a
+  short-lived HTTP callback bound only to `127.0.0.1`. The callback closes when
+  sign-in completes, is cancelled, or times out. Your Spotify password is entered
+  only on Spotify's browser page.
+- The public Client ID is saved in extension settings. The refresh token is
+  stored in a separate GNOME Keyring entry from your Soloist API key. Access
+  tokens exist only in a short-lived worker's memory; neither kind of token is
+  written to settings, playlist caches, command arguments, or logs.
+- Refresh tokens are renewed as needed during a sync. If Spotify expires or
+  revokes the login, reconnect from Preferences. There is no background token
+  renewal timer. API requests do not follow redirects or send tokens to
+  server-supplied pagination URLs.
+- **Disconnect** removes the stored playlist login and cached playlist list.
+  Soloist and its key keep working. To revoke the app's permission at Spotify
+  as well, remove it from your Spotify account's connected apps.
+- Uninstalling the extension preserves saved credentials. Disconnect playlist
+  sync and use **Forget key** for Soloist before uninstalling if you want those
+  credentials removed too.
+
 ## Development and checks
 
 ```sh
@@ -129,6 +189,11 @@ loading, fallbacks, size limits, cancellation, and shutdown without internet acc
 Soloist tests use a local mock WebSocket server and fake child processes to check
 pairing, events, controls, capabilities, links, reconnects, startup, expiry, private
 directory permissions, and shutdown. They do not read your keyring or contact Spotify.
+Web API checks use mock local HTTP services and an in-memory token store to test
+PKCE, callback state validation, cancellation, token refresh and rotation,
+pagination, rate limits, and redirect protection. Playlist cache tests use
+memory-only GSettings and temporary files to check startup/manual sync, offline
+retention, account changes, and private cache permissions.
 
 These automated checks do not render GNOME Shell. A live GNOME 51 session is
 needed to verify panel layout, focus/keyboard navigation, preferences, remote
@@ -136,8 +201,12 @@ artwork decoding, GNOME Keyring interaction, and playback through the real playe
 An additional isolated GNOME Shell 51.1 smoke check verified extension activation,
 the menu and preferences window, left placement, stable backend lifetime during
 panel moves and locking, and hiding the indicator on lock. Key storage, lookup,
-and deletion were also verified with a disposable keyring and fake key. Real
-Spotify pairing and audio playback require your personal key and session.
+and deletion were also verified with a disposable keyring and fake key. The
+playlist picker was checked with 60 cached lists, and playlist credential
+separation, worker serialization, cancellation, and disconnect were checked with
+fake tokens. Real Spotify account authorization requires your own Client ID and
+browser sign-in. Soloist pairing and audio playback require your personal key
+and session.
 
 Manual checks after installation:
 
@@ -156,6 +225,10 @@ Manual checks after installation:
 9. Move the indicator and lock/unlock the screen while playing. Audio should continue.
 10. Stop Soloist, start it again, and disable the extension. Its managed player
     should stop, with no duplicate or orphaned Soloist process.
+11. Connect playlist sync, check the named list, and play a playlist. Click Sync
+    after changing your Spotify playlists. Test offline startup with a cached list.
+12. Disconnect playlist sync and confirm the cached list is cleared while Soloist
+    playback continues.
 
 ## Troubleshooting
 
@@ -190,5 +263,8 @@ Uninstall from this project directory (saved preferences, key, and session are p
 - [Spotify Soloist authentication](https://developer.spotify.com/documentation/soloist/concepts/authentication)
 - [Spotify Soloist WebSocket API](https://developer.spotify.com/documentation/soloist/reference/websocket-api)
 - [Spotify Soloist downloads and updates](https://developer.spotify.com/documentation/soloist/reference/downloads-and-updates)
+- [Spotify playlist API](https://developer.spotify.com/documentation/web-api/reference/get-a-list-of-current-users-playlists)
+- [Spotify PKCE authorization](https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow)
+- [Spotify redirect URI requirements](https://developer.spotify.com/documentation/web-api/concepts/redirect_uri)
 
 MIT licensed. This is an independent project, not affiliated with Spotify.

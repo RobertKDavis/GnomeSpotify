@@ -3,6 +3,8 @@ import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 import {forgetKey, lookupKey, saveKey} from './soloist-secrets.js';
+import {REGISTERED_REDIRECT, validClientId} from './spotify-api.js';
+import {PLAYLIST_ERRORS, runPlaylistJob} from './playlist-job.js';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
@@ -14,6 +16,7 @@ export default class GnomeSpotifyPreferences extends ExtensionPreferences {
         const playback = new Adw.PreferencesPage({title: 'Playback', icon_name: 'audio-x-generic-symbolic'});
         window.add(playback);
         this._addSoloist(playback, window, settings);
+        this._addPlaylists(window, settings);
         const page = new Adw.PreferencesPage({title: 'Top bar', icon_name: 'view-more-symbolic'});
         window.add(page);
         const group = new Adw.PreferencesGroup({title: 'Top bar',
@@ -47,6 +50,133 @@ export default class GnomeSpotifyPreferences extends ExtensionPreferences {
             return false;
         });
         group.add(position);
+    }
+
+    _addPlaylists(window, settings) {
+        const page = new Adw.PreferencesPage({title: 'Playlists', icon_name: 'view-list-symbolic'});
+        window.add(page);
+        const setup = new Adw.PreferencesGroup({title: 'Spotify playlist sync',
+            description: 'Syncs once when the extension starts, after connecting, and when you click Sync. '
+                + 'Your saved list stays available between syncs. Playback continues through Soloist.'});
+        page.add(setup);
+        const instructions = new Adw.ActionRow({title: 'Create a Spotify Web API app',
+            subtitle: 'In Spotify for Developers, create an app, enable Web API, and register the redirect URI below. '
+                + 'Copy its Client ID here. A client secret is not needed.', activatable: true});
+        const status = new Adw.ActionRow({title: 'Spotify connection'});
+        const cancellable = new Gio.Cancellable();
+        let closed = false;
+        let operation = null;
+        let busy = false;
+        instructions.connect('activated', () => {
+            Gio.AppInfo.launch_default_for_uri_async('https://developer.spotify.com/dashboard', null,
+                cancellable, (_source, result) => {
+                    try { Gio.AppInfo.launch_default_for_uri_finish(result); }
+                    catch { if (!closed) status.subtitle = 'Open developer.spotify.com/dashboard in your browser.'; }
+                });
+        });
+        setup.add(instructions);
+        const redirect = new Adw.ActionRow({title: 'Redirect URI'});
+        redirect.add_suffix(new Gtk.Label({label: REGISTERED_REDIRECT, selectable: true}));
+        setup.add(redirect);
+        const client = new Adw.EntryRow({title: 'Web API Client ID',
+            text: settings.get_string('spotify-client-id')});
+        setup.add(client);
+        setup.add(status);
+        const actions = new Adw.ActionRow({title: 'Connect your Spotify account',
+            subtitle: 'Browser sign-in requests read access to your playlists'});
+        const connect = new Gtk.Button({label: 'Connect Spotify', valign: Gtk.Align.CENTER});
+        const disconnect = new Gtk.Button({label: 'Disconnect', valign: Gtk.Align.CENTER});
+        actions.add_suffix(disconnect);
+        actions.add_suffix(connect);
+        setup.add(actions);
+        const refreshStatus = () => {
+            if (closed || busy)
+                return;
+            status.subtitle = settings.get_boolean('spotify-connected')
+                ? 'Connected. The refresh token is saved in GNOME Keyring.'
+                : 'Not connected. This login is separate from your Soloist API key.';
+            disconnect.sensitive = validClientId(settings.get_string('spotify-client-id'));
+        };
+        refreshStatus();
+        const bump = key => settings.set_uint(key, (settings.get_uint(key) + 1) >>> 0);
+        const perform = async action => {
+            if (busy) {
+                operation?.cancel();
+                return;
+            }
+            const id = (action === 'connect' ? client.text : settings.get_string('spotify-client-id')).trim();
+            if (!validClientId(id)) {
+                status.subtitle = PLAYLIST_ERRORS['client-id'];
+                return;
+            }
+            busy = true;
+            operation = new Gio.Cancellable();
+            connect.sensitive = false;
+            disconnect.sensitive = true;
+            disconnect.label = 'Cancel';
+            client.sensitive = false;
+            status.subtitle = action === 'connect' ? 'Finish signing in using your browser…' : 'Disconnecting playlist sync…';
+            let result;
+            try {
+                const previousId = settings.get_string('spotify-client-id');
+                if (action === 'connect' && previousId !== id) {
+                    if (validClientId(previousId)) {
+                        const removed = await runPlaylistJob('disconnect', previousId, this.path, operation);
+                        if (!removed.ok)
+                            throw new Error(removed.code);
+                    }
+                    if (closed || operation.is_cancelled())
+                        return;
+                    settings.set_boolean('spotify-connected', false);
+                    settings.set_string('spotify-client-id', id);
+                }
+                result = await runPlaylistJob(action, id, this.path, operation);
+                if (closed)
+                    return;
+                if (result.ok) {
+                    settings.set_boolean('spotify-connected', action === 'connect');
+                    bump('spotify-account-revision');
+                    status.subtitle = action === 'connect'
+                        ? 'Connected. Loading your playlists…' : 'Disconnected. Saved playlists and this login were removed.';
+                } else {
+                    status.subtitle = PLAYLIST_ERRORS[result.code] ?? PLAYLIST_ERRORS.request;
+                }
+            } catch (error) {
+                if (!closed)
+                    status.subtitle = PLAYLIST_ERRORS[error.message] ?? PLAYLIST_ERRORS.request;
+            } finally {
+                busy = false;
+                operation = null;
+                if (!closed) {
+                    connect.sensitive = true;
+                    disconnect.label = 'Disconnect';
+                    disconnect.sensitive = validClientId(settings.get_string('spotify-client-id'));
+                    client.sensitive = true;
+                }
+            }
+        };
+        connect.connect('clicked', () => perform('connect'));
+        disconnect.connect('clicked', () => perform('disconnect'));
+        const syncRow = new Adw.ActionRow({title: 'Sync playlists'});
+        settings.bind('playlist-sync-status', syncRow, 'subtitle', Gio.SettingsBindFlags.GET);
+        const sync = new Gtk.Button({label: 'Sync now', valign: Gtk.Align.CENTER});
+        settings.bind('spotify-connected', sync, 'sensitive', Gio.SettingsBindFlags.GET);
+        sync.connect('clicked', () => bump('spotify-sync-request'));
+        syncRow.add_suffix(sync);
+        setup.add(syncRow);
+        const connectedId = settings.connect('changed::spotify-connected', refreshStatus);
+        const security = new Adw.PreferencesGroup({title: 'Separate credentials',
+            description: 'The Client ID is public. The playlist refresh token is stored separately from your Soloist key '
+                + 'in GNOME Keyring, and access tokens stay in the sync helper’s memory. '
+                + 'Disconnect removes only playlist syncing; Soloist playback is left running.'});
+        page.add(security);
+        window.connect('close-request', () => {
+            closed = true;
+            operation?.cancel();
+            cancellable.cancel();
+            settings.disconnect(connectedId);
+            return false;
+        });
     }
 
     _addSoloist(page, window, settings) {

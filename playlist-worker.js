@@ -16,10 +16,40 @@ const signals = [2, 15].map(signal => GLib.unix_signal_add(GLib.PRIORITY_DEFAULT
     return GLib.SOURCE_CONTINUE;
 }));
 let exitCode = 0;
+let lease = 0;
+async function acquireLease() {
+    // Serialize workers for this Client ID so refresh-token rotation cannot race
+    // another sign-in or a disconnect. The session bus releases the lease on exit.
+    await new Promise((resolve, reject) => {
+        let settled = false;
+        const cancelId = cancellable.connect(() => {
+            if (!settled) {
+                settled = true;
+                reject(Object.assign(new Error('cancelled'), {code: 'cancelled'}));
+            }
+        });
+        lease = Gio.bus_own_name(Gio.BusType.SESSION,
+            `org.gnome.Shell.Extensions.GnomeSpotify.Playlists.Client${clientId}`,
+            Gio.BusNameOwnerFlags.NONE, null, () => {
+                if (!settled) {
+                    settled = true;
+                    cancellable.disconnect(cancelId);
+                    resolve();
+                }
+            }, connection => {
+                if (!connection && !settled) {
+                    settled = true;
+                    cancellable.disconnect(cancelId);
+                    reject(new Error('Session bus unavailable'));
+                }
+            });
+    });
+}
 async function run() {
     let api;
     try {
         api = new SpotifyApi(clientId, tokenStore);
+        await acquireLease();
         if (action === 'connect') {
             await api.authorize(url => new Promise((resolve, reject) => {
                 Gio.AppInfo.launch_default_for_uri_async(url, null, cancellable, (_source, result) => {
@@ -41,10 +71,12 @@ async function run() {
     } catch (error) {
         // The result contains only an allowlisted code, never URLs, tokens, or raw errors.
         const codes = ['client-id', 'authorization', 'keyring', 'network', 'forbidden',
-            'rate-limit', 'token', 'response', 'denied', 'timeout', 'browser', 'cancelled'];
+            'rate-limit', 'token', 'response', 'denied', 'timeout', 'browser', 'cancelled', 'callback-port'];
         return {ok: false, code: codes.includes(error.code) ? error.code : 'request'};
     } finally {
         api?.destroy();
+        if (lease)
+            Gio.bus_unown_name(lease);
     }
 }
 run().then(result => {

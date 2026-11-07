@@ -19,3 +19,5 @@
 .gs-menu-controls { spacing: 12px; }
 .gs-status { max-width: 350px; font-size: 0.9em; opacity: 0.8; }
 .gs-link { min-width: 260px; }
+.gs-playlist-name { max-width: 320px; }
+.gs-playlist-status { max-width: 320px; font-size: 0.9em; opacity: 0.75; }

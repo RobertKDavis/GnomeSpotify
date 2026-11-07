@@ -7,13 +7,15 @@ all: package
 schemas/gschemas.compiled: schemas/org.gnome.shell.extensions.gnome-spotify.gschema.xml
 	glib-compile-schemas --strict schemas
 
-check:
+check: schemas/gschemas.compiled
 	bash -n instal.sh unintstal.sh
 	glib-compile-schemas --strict --dry-run schemas
 	@for file in *.js; do node --input-type=module --check < "$$file" || exit 1; done
 	dbus-run-session -- gjs -m tests/mpris.test.js
 	gjs -m tests/artwork.test.js
 	gjs -m tests/soloist.test.js
+	gjs -m tests/spotify-api.test.js
+	GSETTINGS_BACKEND=memory gjs -m tests/playlists.test.js
 
 package: schemas/gschemas.compiled
 	python3 scripts/package.py

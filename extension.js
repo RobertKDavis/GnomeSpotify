@@ -15,6 +15,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {ArtworkLoader} from './artwork.js';
 import {formatTime, SpotifyPlayer} from './mpris.js';
 import {SoloistPlayer, soloistConfig} from './soloist.js';
+import {PlaylistLibrary} from './playlists.js';
 
 function label(styleClass) {
     const actor = new St.Label({style_class: styleClass, y_align: Clutter.ActorAlign.CENTER});
@@ -78,6 +79,7 @@ class SpotifyIndicator extends PanelMenu.Button {
             box.add_child(button);
 
         this._buildMenu();
+        this._renderPlaylists();
         this._settingsId = settings.connect('changed', () => this._render());
         this._menuId = this._trackButton.menu.connect('open-state-changed', (_menu, open) => {
             this._stopTimer();
@@ -113,6 +115,7 @@ class SpotifyIndicator extends PanelMenu.Button {
         content.add_child(header);
         this._status = new St.Label({style_class: 'gs-status'});
         this._status.clutter_text.line_wrap = true;
+        this._status.clutter_text.single_line_mode = false;
         content.add_child(this._status);
         this._time = label('gs-time');
         content.add_child(this._time);
@@ -134,6 +137,20 @@ class SpotifyIndicator extends PanelMenu.Button {
         menu.addMenuItem(controls);
         menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         if (this._player.state.soloist) {
+            this._playlistMenu = new PopupMenu.PopupSubMenuMenuItem('Playlists', true);
+            this._playlistMenu.icon.icon_name = 'view-list-symbolic';
+            this._playlistSync = this._playlistMenu.menu.addAction('Sync playlists', () =>
+                this._extension._playlists.sync());
+            this._playlistStatus = new PopupMenu.PopupMenuItem('', {reactive: false, can_focus: false});
+            this._playlistStatus.label.add_style_class_name('gs-playlist-status');
+            this._playlistStatus.label.clutter_text.line_wrap = true;
+            this._playlistStatus.label.clutter_text.single_line_mode = false;
+            this._playlistStatus.label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+            this._playlistMenu.menu.addMenuItem(this._playlistStatus);
+            this._playlistSection = new PopupMenu.PopupMenuSection();
+            this._playlistMenu.menu.addMenuItem(this._playlistSection);
+            this._playlistMenu.menu.addAction('Playlist preferences', () => this._extension.openPreferences());
+            menu.addMenuItem(this._playlistMenu);
             const linkRow = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
             this._link = new St.Entry({hint_text: 'Paste a Spotify song or playlist link',
                 accessible_name: 'Spotify link', can_focus: true, x_expand: true,
@@ -168,6 +185,24 @@ class SpotifyIndicator extends PanelMenu.Button {
             this._player.raise();
         } else {
             Main.notify('Gnome Spotify', 'Spotify was not found. Open the Spotify Flatpak from your applications.');
+        }
+    }
+
+    _renderPlaylists() {
+        if (!this._playlistMenu || !this._alive)
+            return;
+        const library = this._extension._playlists;
+        this._playlistMenu.label.text = `Playlists (${library.playlists.length})`;
+        this._playlistSync.label.text = library.busy ? 'Syncing playlists…' : 'Sync playlists';
+        this._playlistSync.setSensitive(!library.busy && library.connected);
+        this._playlistStatus.label.text = library.message;
+        this._playlistSection.removeAll();
+        for (const playlist of library.playlists) {
+            const item = new PopupMenu.PopupMenuItem(playlist.name);
+            item.label.add_style_class_name('gs-playlist-name');
+            item.label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+            item.connect('activate', () => this._player.playUri(playlist.uri));
+            this._playlistSection.addMenuItem(item);
         }
     }
 
@@ -265,6 +300,8 @@ class SpotifyIndicator extends PanelMenu.Button {
 export default class GnomeSpotifyExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
+        this._playlists = new PlaylistLibrary(this._settings, this.path,
+            () => this._indicator?._renderPlaylists());
         // Keep the playback backend alive when locked, but hide its panel UI.
         this._sessionId = Main.sessionMode.connect('updated', () => this._indicator?._render());
         this._positionId = this._settings.connect('changed::panel-position', () => this._rebuild());
@@ -303,6 +340,8 @@ export default class GnomeSpotifyExtension extends Extension {
         this._indicator = null;
         this._player.destroy();
         this._player = null;
+        this._playlists.destroy();
+        this._playlists = null;
         this._settings = null;
     }
 }

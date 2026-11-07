@@ -1,0 +1,21 @@
+.gs-indicator { -minimum-hpadding: 2px; -natural-hpadding: 2px; }
+.gs-panel-box { spacing: 2px; }
+.gs-track-button { -minimum-hpadding: 4px; -natural-hpadding: 6px; }
+.gs-track { spacing: 7px; }
+.gs-panel-title { font-size: 0.95em; }
+.gs-transport { border-radius: 8px; padding: 4px 6px; }
+.gs-transport:hover, .gs-transport:focus { background-color: rgba(255, 255, 255, 0.16); }
+.gs-transport:active { background-color: rgba(255, 255, 255, 0.25); }
+.gs-transport:insensitive { opacity: 0.35; }
+.gs-transport-large { padding: 10px 18px; border-radius: 24px; }
+.gs-card { spacing: 14px; padding: 10px 4px 0; width: 350px; }
+.gs-header { spacing: 16px; }
+.gs-cover { border-radius: 10px; }
+.gs-details { spacing: 6px; }
+.gs-song { font-weight: bold; font-size: 1.1em; max-width: 220px; }
+.gs-artist, .gs-album { max-width: 220px; }
+.gs-album { opacity: 0.65; font-size: 0.9em; }
+.gs-time { opacity: 0.7; font-size: 0.9em; text-align: center; font-feature-settings: "tnum"; }
+.gs-menu-controls { spacing: 12px; }
+.gs-status { max-width: 350px; font-size: 0.9em; opacity: 0.8; }
+.gs-link { min-width: 260px; }

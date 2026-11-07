@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.gnome-spotify" path="/org/gnome/shell/extensions/gnome-spotify/">
+    <key name="playback-source" type="s">
+      <choices><choice value="desktop"/><choice value="soloist"/></choices>
+      <default>'desktop'</default>
+      <summary>Spotify desktop app or local Soloist player</summary>
+    </key>
+    <key name="soloist-path" type="s">
+      <default>'~/Programs/soloist_release_x86_64/soloist'</default>
+      <summary>Path to the installed Soloist executable</summary>
+    </key>
+    <key name="soloist-device-name" type="s">
+      <default>'Gnome Spotify'</default>
+      <summary>Device name displayed in Spotify Connect</summary>
+    </key>
+    <key name="soloist-autostart" type="b">
+      <default>true</default>
+      <summary>Start Soloist when the extension is enabled in Soloist mode</summary>
+    </key>
+    <key name="soloist-revision" type="u">
+      <default>0</default>
+      <summary>Restart request after applying Soloist settings or changing its key</summary>
+    </key>
+    <key name="show-artist" type="b">
+      <default>true</default>
+      <summary>Show the artist beside the title in the top bar</summary>
+    </key>
+    <key name="show-album-art" type="b">
+      <default>true</default>
+      <summary>Show a small album cover in the top bar</summary>
+    </key>
+    <key name="hide-when-closed" type="b">
+      <default>false</default>
+      <summary>Hide the indicator when Spotify is closed</summary>
+    </key>
+    <key name="title-width" type="i">
+      <range min="80" max="600"/>
+      <default>240</default>
+      <summary>Maximum title width in logical pixels</summary>
+    </key>
+    <key name="panel-position" type="s">
+      <choices><choice value="left"/><choice value="center"/><choice value="right"/></choices>
+      <default>'right'</default>
+      <summary>Top bar position</summary>
+    </key>
+  </schema>
+</schemalist>

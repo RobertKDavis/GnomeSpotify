@@ -1,0 +1,9 @@
+{
+  "uuid": "gnome-spotify@gumbawumba",
+  "name": "Gnome Spotify",
+  "description": "Spotify track information, album art, and playback controls in the top bar. Supports the desktop app and local playback through Spotify Soloist on GNOME 51.",
+  "shell-version": ["51"],
+  "session-modes": ["user", "unlock-dialog"],
+  "version": 2,
+  "settings-schema": "org.gnome.shell.extensions.gnome-spotify"
+}

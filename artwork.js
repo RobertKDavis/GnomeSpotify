@@ -12,12 +12,19 @@ export class ArtworkLoader {
         this._cancellable = null;
     }
 
-    async load(url) {
+    // Loads the current cover, cancelling the previous request (track changes).
+    load(url) {
         this.cancel();
         if (!url)
+            return Promise.resolve(null);
+        this._cancellable = new Gio.Cancellable();
+        return this.fetch(url, this._cancellable);
+    }
+
+    // Loads one image without affecting other requests. Never throws; failures return null.
+    async fetch(url, cancellable) {
+        if (!url || cancellable.is_cancelled())
             return null;
-        const cancellable = new Gio.Cancellable();
-        this._cancellable = cancellable;
         let stream;
         try {
             if (/^https?:\/\//i.test(url)) {
@@ -90,5 +97,60 @@ export class ArtworkLoader {
     destroy() {
         this.cancel();
         this._session.abort();
+    }
+}
+
+// Playlist covers: many small images, loaded a few at a time and kept only in memory
+// for the menu's lifetime. Failed links are remembered so they are not retried until
+// a playlist sync supplies a new link.
+export class CoverCache {
+    constructor({loader = new ArtworkLoader(), concurrency = 4, maxEntries = 300} = {}) {
+        this._loader = loader;
+        this._concurrency = concurrency;
+        this._maxEntries = maxEntries;
+        this._lifetime = new Gio.Cancellable();
+        this._entries = new Map();
+        this._waiting = [];
+        this._active = 0;
+    }
+
+    load(url) {
+        if (!url || this._lifetime.is_cancelled())
+            return Promise.resolve(null);
+        let entry = this._entries.get(url);
+        if (!entry) {
+            if (this._entries.size >= this._maxEntries)
+                this._entries.delete(this._entries.keys().next().value);
+            entry = this._slot()
+                .then(() => this._loader.fetch(url, this._lifetime))
+                .finally(() => this._release());
+            this._entries.set(url, entry);
+        }
+        return entry;
+    }
+
+    _slot() {
+        if (this._active < this._concurrency) {
+            this._active++;
+            return Promise.resolve();
+        }
+        return new Promise(resolve => this._waiting.push(resolve));
+    }
+
+    _release() {
+        const next = this._waiting.shift();
+        if (next)
+            next();
+        else
+            this._active--;
+    }
+
+    destroy() {
+        this._lifetime.cancel();
+        // Queued requests run against the cancelled lifetime and resolve to null at once.
+        for (const resolve of this._waiting.splice(0))
+            resolve();
+        this._entries.clear();
+        this._loader.destroy();
     }
 }

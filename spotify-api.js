@@ -17,6 +17,33 @@ export function validClientId(value) {
     return /^[a-f0-9]{32}$/i.test(value);
 }
 
+// Spotify serves cover art from *.scdn.co and *.spotifycdn.com. The Shell only fetches
+// plain HTTPS links on those hosts, so a cache file cannot point it anywhere else.
+const IMAGE_HOST = /^([a-z0-9-]+\.)+(scdn\.co|spotifycdn\.com)$/;
+
+export function trustedImageUrl(value) {
+    if (typeof value !== 'string' || value.length > 2048)
+        return false;
+    try {
+        const uri = GLib.Uri.parse(value, GLib.UriFlags.NONE);
+        return uri.get_scheme() === 'https' && uri.get_userinfo() === null && uri.get_port() === -1 &&
+            IMAGE_HOST.test(uri.get_host() ?? '');
+    } catch {
+        return false;
+    }
+}
+
+// Rows show 32px covers. Prefer the smallest image that stays sharp on a 2x display;
+// user-uploaded covers often have no size, so fall back to the first usable image.
+export function playlistImage(images) {
+    if (!Array.isArray(images))
+        return null;
+    const usable = images.filter(image => image && trustedImageUrl(image.url));
+    const sized = usable.filter(image => Number.isFinite(image.width) && image.width >= 60)
+        .sort((a, b) => a.width - b.width);
+    return (sized[0] ?? usable[0])?.url ?? null;
+}
+
 function base64url(bytes) {
     return GLib.base64_encode(bytes).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 }
@@ -213,8 +240,9 @@ export class SpotifyApi {
                 if (seen.has(uri))
                     continue;
                 seen.add(uri);
+                const image = playlistImage(item.images);
                 playlists.push({uri, name: typeof item.name === 'string' && item.name.trim()
-                    ? item.name.trim() : 'Untitled playlist'});
+                    ? item.name.trim() : 'Untitled playlist', ...image ? {image} : {}});
             }
             // Construct pagination URLs ourselves; never send a token to a next-page URL.
             if (!data.next || data.items.length === 0)

@@ -186,15 +186,23 @@ pairing as they are. To load the playlists owned or followed by your account:
    play it through Soloist. Soloist must be paired and active on this computer.
 
 The list syncs **once when the extension starts**, immediately after you connect,
-and when you click **Sync playlists** in the panel or **Sync now** in Preferences.
+and when you click the sync button next to **Search playlists** in the panel menu
+or **Sync now** in Preferences.
 There is no periodic playlist sync. Moving the panel, changing tracks, opening
 the dropdown, and locking/unlocking the screen do not trigger syncing.
 
 All pages of Spotify's playlist list are fetched before replacing the saved
-list. Network failures and rate limits keep the previous list available. Names
-and Spotify URIs are cached privately at `~/.cache/gnome-spotify/playlists.json`
-(respecting `XDG_CACHE_HOME`), so you can use the saved list between syncs.
-The pasted-link field remains available for other playable Spotify links.
+list. Network failures and rate limits keep the previous list available. Names,
+Spotify URIs, and cover image links are cached privately at
+`~/.cache/gnome-spotify/playlists.json` (respecting `XDG_CACHE_HOME`), so you can
+use the saved list between syncs. The pasted-link field remains available for
+other playable Spotify links.
+
+Playlist covers load from Spotify's image servers when you open **Playlists**,
+a few at a time, and are kept only in memory; no image files are written to disk.
+Spotify's cover links can expire within a day, so after a long session some
+covers may show a music-note placeholder until the next sync (at login or when
+you click the sync button). Playlists without a cover also show the placeholder.
 
 ### Playlist login security
 
@@ -210,6 +218,9 @@ The pasted-link field remains available for other playable Spotify links.
   revokes the login, reconnect from Preferences. There is no background token
   renewal timer. API requests do not follow redirects or send tokens to
   server-supplied pagination URLs.
+- Cover images are fetched without any token. GNOME Shell only loads HTTPS cover
+  links on Spotify's image hosts (`*.scdn.co`, `*.spotifycdn.com`); any other
+  link in the playlist cache is ignored.
 - **Disconnect** removes the stored playlist login and cached playlist list.
   Soloist and its key keep working. To revoke the app's permission at Spotify
   as well, remove it from your Spotify account's connected apps.

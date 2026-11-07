@@ -62,8 +62,8 @@ export class SoloistPlayer {
     get state() {
         const state = this._model.state;
         const statusMessage = !state.connected ? this._message : !state.loggedIn
-            ? `In Spotify on your phone, select “${this._config.deviceName}” to pair this computer.`
-            : !state.active ? 'Choose “Use this computer” below to make Soloist the playback device.' : '';
+            ? `Open Spotify on your phone, tap the device picker, and choose “${this._config.deviceName}” to pair this computer.`
+            : !state.active ? 'Spotify is set to play on another device.' : '';
         return {...state, soloist: true, managed: this._runner !== null, statusMessage};
     }
 
@@ -114,7 +114,7 @@ export class SoloistPlayer {
             if (!this._destroyed && this._config.autostart && !this._attemptedStart)
                 this.start();
             else if (!this._destroyed && !this._runner && !this._attemptedStart) {
-                this._message = 'Soloist is stopped. Choose Start Soloist below.';
+                this._message = 'Soloist isn’t running.';
                 this._onChanged();
             }
         } finally {
@@ -275,7 +275,7 @@ export class SoloistPlayer {
                 if (!this._destroyed) {
                     if (this._message === 'Starting Soloist…') {
                         this._message = process.get_successful()
-                            ? 'Soloist is stopped. Choose Start Soloist below.' : ERRORS.startup;
+                            ? 'Soloist isn’t running.' : ERRORS.startup;
                     }
                     this._onChanged();
                 }
@@ -314,7 +314,7 @@ export class SoloistPlayer {
     stop() {
         // Only stop the process we started. An independently started Soloist is left alone.
         if (this._runner) {
-            this._message = 'Soloist is stopped. Choose Start Soloist below.';
+            this._message = 'Soloist isn’t running.';
             try { this._runner.get_stdin_pipe().close(null); } catch { /* already closed */ }
         }
         this._attemptedStart = true;

@@ -29,7 +29,8 @@ async function main() {
     settings.set_boolean('spotify-connected', true);
     const folder = GLib.dir_make_tmp('gnome-playlists-test-XXXXXX');
     const cachePath = `${folder}/playlists.json`;
-    const cached = [{name: 'Cached list', uri: 'spotify:playlist:cached'}];
+    const cached = [{name: 'Cached list', uri: 'spotify:playlist:cached', image: 'https://i.scdn.co/image/cached'},
+        {name: 'Planted link', uri: 'spotify:playlist:planted', image: 'https://attacker.example/pixel'}];
     GLib.file_set_contents(cachePath, JSON.stringify({clientId, playlists: cached, updatedAt: 100,
         accountRevision: settings.get_uint('spotify-account-revision')}));
     let calls = 0;
@@ -42,14 +43,18 @@ async function main() {
     try {
         await waitFor(() => calls === 1, 'single startup sync');
         assert(library.playlists[0].name === 'Cached list', 'cached list shown while syncing');
+        assert(library.playlists[0].image === 'https://i.scdn.co/image/cached', 'cached cover link kept');
+        assert(library.playlists.length === 2 && !('image' in library.playlists[1]),
+            'untrusted cached cover link dropped without losing the playlist');
         await library.sync();
         await library.sync();
         assert(calls === 1, 'overlapping sync clicks are ignored');
-        const fresh = [{name: 'Fresh list', uri: 'spotify:playlist:fresh'}];
+        const fresh = [{name: 'Fresh list', uri: 'spotify:playlist:fresh', image: 'https://mosaic.scdn.co/60/fresh'}];
         resolveJob({ok: true, clientId, playlists: fresh, updatedAt: 200});
         await waitFor(() => !library.busy, 'successful startup sync');
         const saved = JSON.parse(new TextDecoder().decode(GLib.file_get_contents(cachePath)[1]));
-        assert(saved.playlists[0].name === 'Fresh list', 'successful sync cached');
+        assert(saved.playlists[0].name === 'Fresh list' && saved.playlists[0].image === 'https://mosaic.scdn.co/60/fresh',
+            'successful sync cached with its cover link');
         const mode = Gio.File.new_for_path(cachePath).query_info('unix::mode', Gio.FileQueryInfoFlags.NONE, null)
             .get_attribute_uint32('unix::mode');
         assert((mode & 0o777) === 0o600, 'playlist cache is private');
@@ -85,7 +90,7 @@ async function main() {
         const before = calls;
         await delay(30);
         assert(calls === before, 'no disconnected automatic sync');
-        print('PASS: startup/manual sync, cache loading/privacy, deduped requests, offline retention, disconnect, and stale-account protection');
+        print('PASS: startup/manual sync, cache loading/privacy, cover links, deduped requests, offline retention, disconnect, and stale-account protection');
     } finally {
         library.destroy();
         GLib.unlink(cachePath);

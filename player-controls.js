@@ -5,16 +5,22 @@ import St from 'gi://St';
 import * as Slider from 'resource:///org/gnome/shell/ui/slider.js';
 import {formatTime} from './mpris.js';
 
-function optionButton(icon, name, action) {
-    const button = new St.Button({style_class: 'gs-option', can_focus: true, accessible_name: name});
-    const box = new St.BoxLayout({style_class: 'gs-option-label'});
-    button.icon = new St.Icon({icon_name: icon, icon_size: 16});
-    button.text = new St.Label({text: name, y_align: Clutter.ActorAlign.CENTER});
-    box.add_child(button.icon);
-    box.add_child(button.text);
-    button.set_child(box);
+// Round icon button using the Shell theme's own button styles, so hover, focus,
+// and insensitive states follow the light/dark style and accent color.
+export function iconButton(icon, name, action, {styleClass = '', iconSize = 16, flat = true} = {}) {
+    const button = new St.Button({
+        style_class: ['icon-button', flat ? 'flat' : '', 'gs-control', styleClass].filter(Boolean).join(' '),
+        can_focus: true,
+        accessible_name: name,
+        child: new St.Icon({icon_name: icon, icon_size: iconSize}),
+        y_align: Clutter.ActorAlign.CENTER,
+    });
     button.connect('clicked', action);
     return button;
+}
+
+function setChecked(button, checked) {
+    button[checked ? 'add_style_pseudo_class' : 'remove_style_pseudo_class']('checked');
 }
 
 function sensitive(actor, enabled) {
@@ -30,31 +36,38 @@ export class PlaybackControls {
         this.progress = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL,
             style_class: 'gs-progress', x_expand: true});
         this.seek = this._slider('Playback position', 'seek');
-        this._time = new St.Label({style_class: 'gs-time'});
+        const times = new St.BoxLayout({style_class: 'gs-time-row', x_expand: true});
+        this._elapsed = new St.Label({style_class: 'gs-time', x_expand: true});
+        this._total = new St.Label({style_class: 'gs-time'});
+        // St ignores CSS opacity, so secondary text is dimmed on the actor.
+        this._elapsed.opacity = this._total.opacity = 170;
+        times.add_child(this._elapsed);
+        times.add_child(this._total);
         this.progress.add_child(this.seek.slider);
-        this.progress.add_child(this._time);
+        this.progress.add_child(times);
 
-        this.options = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL,
-            style_class: 'gs-playback-options', x_expand: true});
-        const row = new St.BoxLayout({style_class: 'gs-option-row', x_align: Clutter.ActorAlign.CENTER});
-        this._shuffle = optionButton('media-playlist-shuffle-symbolic', 'Shuffle', () =>
-            player.setShuffle(!player.state.shuffle));
-        this._repeat = optionButton('media-playlist-repeat-symbolic', 'Repeat: Off', () => {
+        this.shuffle = iconButton('media-playlist-shuffle-symbolic', 'Turn shuffle on', () =>
+            player.setShuffle(!player.state.shuffle), {styleClass: 'gs-toggle'});
+        this.repeat = iconButton('media-playlist-repeat-symbolic', 'Repeat: Off', () => {
             const modes = ['off', 'context', 'track'];
             player.setRepeat(modes[(modes.indexOf(player.state.repeat) + 1) % modes.length]);
-        });
-        row.add_child(this._shuffle);
-        row.add_child(this._repeat);
-        this.options.add_child(row);
-        const volumeRow = new St.BoxLayout({style_class: 'gs-volume-row', x_expand: true});
-        this._volumeIcon = new St.Icon({icon_name: 'audio-volume-high-symbolic', icon_size: 18,
+        }, {styleClass: 'gs-toggle'});
+
+        this.volumeRow = new St.BoxLayout({style_class: 'gs-volume-row', x_expand: true});
+        this._volumeIcon = new St.Icon({icon_name: 'audio-volume-high-symbolic', icon_size: 16,
             y_align: Clutter.ActorAlign.CENTER});
         this.volume = this._slider('Spotify volume', 'volume');
+        this.volume.slider.x_expand = true;
         this._volumeText = new St.Label({style_class: 'gs-volume-value', y_align: Clutter.ActorAlign.CENTER});
-        volumeRow.add_child(this._volumeIcon);
-        volumeRow.add_child(this.volume.slider);
-        volumeRow.add_child(this._volumeText);
-        this.options.add_child(volumeRow);
+        this._volumeText.opacity = 170;
+        this.volumeRow.add_child(this._volumeIcon);
+        this.volumeRow.add_child(this.volume.slider);
+        this.volumeRow.add_child(this._volumeText);
+    }
+
+    _showTime(position, duration) {
+        this._elapsed.text = formatTime(position);
+        this._total.text = formatTime(duration);
     }
 
     _slider(name, kind) {
@@ -78,7 +91,7 @@ export class PlaybackControls {
                 captureTrack();
             control.dirty = true;
             if (kind === 'seek')
-                this._time.text = `${formatTime(slider.value * control.duration)}  /  ${formatTime(control.duration)}`;
+                this._showTime(slider.value * control.duration, control.duration);
             else
                 this._volumeText.text = `${Math.round(slider.value * 100)}%`;
             if (!control.dragging) {
@@ -119,23 +132,23 @@ export class PlaybackControls {
         control.updating = false;
     }
 
-    update(state) {
-        this.options.visible = state.connected;
+    update(state, ready = state.connected) {
+        this.volumeRow.visible = ready;
         this._value(this.volume, state.volume ?? 0);
         if (!this.volume.dragging && !this.volume.dirty)
             this._volumeText.text = `${Math.round((state.volume ?? 0) * 100)}%`;
         this._volumeIcon.icon_name = state.volume === 0 ? 'audio-volume-muted-symbolic'
             : state.volume < 0.5 ? 'audio-volume-low-symbolic' : 'audio-volume-high-symbolic';
         sensitive(this.volume.slider, state.canVolume);
-        sensitive(this._shuffle, state.canShuffle);
-        sensitive(this._repeat, state.canRepeat);
-        this._shuffle.accessible_name = state.shuffle ? 'Turn shuffle off' : 'Turn shuffle on';
-        this._shuffle[state.shuffle ? 'add_style_pseudo_class' : 'remove_style_pseudo_class']('checked');
-        this._repeat.text.text = `Repeat: ${{off: 'Off', context: 'All', track: 'One'}[state.repeat] ?? 'Off'}`;
-        this._repeat.accessible_name = `${this._repeat.text.text}. Click to change repeat mode`;
-        this._repeat.icon.icon_name = state.repeat === 'track'
+        this.shuffle.reactive = this.shuffle.can_focus = Boolean(state.canShuffle);
+        this.repeat.reactive = this.repeat.can_focus = Boolean(state.canRepeat);
+        this.shuffle.accessible_name = state.shuffle ? 'Turn shuffle off' : 'Turn shuffle on';
+        setChecked(this.shuffle, state.shuffle);
+        const mode = {off: 'Off', context: 'All', track: 'One'}[state.repeat] ?? 'Off';
+        this.repeat.accessible_name = `Repeat: ${mode}. Click to change repeat mode`;
+        this.repeat.child.icon_name = state.repeat === 'track'
             ? 'media-playlist-repeat-song-symbolic' : 'media-playlist-repeat-symbolic';
-        this._repeat[state.repeat !== 'off' ? 'add_style_pseudo_class' : 'remove_style_pseudo_class']('checked');
+        setChecked(this.repeat, state.repeat !== 'off');
         this.updateProgress();
     }
 
@@ -145,7 +158,7 @@ export class PlaybackControls {
         sensitive(this.seek.slider, state.canSeek);
         if (!this.seek.dragging && !this.seek.dirty) {
             this._value(this.seek, state.duration > 0 ? this._player.position / state.duration : 0);
-            this._time.text = `${formatTime(this._player.position)}  /  ${formatTime(state.duration)}`;
+            this._showTime(this._player.position, state.duration);
         }
     }
 

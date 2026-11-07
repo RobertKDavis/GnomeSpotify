@@ -2,10 +2,15 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import {PLAYLIST_ERRORS, runPlaylistJob} from './playlist-job.js';
+import {trustedImageUrl} from './spotify-api.js';
 
-function validList(items) {
-    return Array.isArray(items) && items.every(item => item && typeof item.name === 'string' &&
-        typeof item.uri === 'string' && /^spotify:playlist:[a-z0-9]+$/i.test(item.uri));
+// Returns a clean copy of the list, or null if it is malformed. Cover links are
+// optional: an untrusted one is dropped rather than discarding the whole list.
+function normalizeList(items) {
+    if (!Array.isArray(items) || !items.every(item => item && typeof item.name === 'string' &&
+        typeof item.uri === 'string' && /^spotify:playlist:[a-z0-9]+$/i.test(item.uri)))
+        return null;
+    return items.map(({name, uri, image}) => trustedImageUrl(image) ? {name, uri, image} : {name, uri});
 }
 
 export class PlaylistLibrary {
@@ -58,12 +63,13 @@ export class PlaylistLibrary {
                 });
             });
             const cache = JSON.parse(new TextDecoder().decode(bytes));
+            const playlists = normalizeList(cache.playlists);
             if (this._destroyed || generation !== this._generation ||
                 cache.clientId !== this._settings.get_string('spotify-client-id') ||
                 cache.accountRevision !== this._settings.get_uint('spotify-account-revision') ||
-                !validList(cache.playlists) || !Number.isFinite(cache.updatedAt))
+                !playlists || !Number.isFinite(cache.updatedAt))
                 return;
-            this.playlists = cache.playlists;
+            this.playlists = playlists;
             this.updatedAt = cache.updatedAt;
             this.message = this.connected
                 ? `${this.playlists.length} saved playlists. Syncing is available from the menu.`
@@ -122,7 +128,8 @@ export class PlaylistLibrary {
             result = await this._job('sync', clientId, this._directory, operation);
             if (this._destroyed || generation !== this._generation)
                 return;
-            if (!result.ok || result.clientId !== clientId || !validList(result.playlists) ||
+            const playlists = result.ok ? normalizeList(result.playlists) : null;
+            if (!result.ok || result.clientId !== clientId || !playlists ||
                 !Number.isFinite(result.updatedAt)) {
                 if (result.code === 'authorization')
                     this._settings.set_boolean('spotify-connected', false);
@@ -130,7 +137,7 @@ export class PlaylistLibrary {
                 return;
             }
             // Publish the new list only after every API page was fetched successfully.
-            this.playlists = result.playlists;
+            this.playlists = playlists;
             this.updatedAt = result.updatedAt;
             this.message = `${this.playlists.length} playlists synced at ${new Date(this.updatedAt).toLocaleString()}.`;
             try {

@@ -1,3 +1,4 @@
+/* Top bar */
 .gs-indicator { -minimum-hpadding: 2px; -natural-hpadding: 2px; }
 .gs-panel-box { spacing: 2px; }
 .gs-track-button { -minimum-hpadding: 4px; -natural-hpadding: 6px; }
@@ -6,30 +7,83 @@
 .gs-transport { border-radius: 8px; padding: 4px 6px; }
 .gs-transport:hover, .gs-transport:focus { background-color: rgba(255, 255, 255, 0.16); }
 .gs-transport:active { background-color: rgba(255, 255, 255, 0.25); }
-.gs-transport:insensitive { opacity: 0.35; }
-.gs-transport-large { padding: 10px 18px; border-radius: 24px; }
-.gs-card { spacing: 14px; padding: 10px 4px 0; width: 350px; }
-.gs-header { spacing: 16px; }
-.gs-cover { border-radius: 10px; }
-.gs-details { spacing: 6px; }
-.gs-song { font-weight: bold; font-size: 1.1em; max-width: 220px; }
-.gs-artist, .gs-album { max-width: 220px; }
-.gs-album { opacity: 0.65; font-size: 0.9em; }
-.gs-time { opacity: 0.7; font-size: 0.9em; text-align: center; font-feature-settings: "tnum"; }
-.gs-menu-controls { spacing: 12px; }
-.gs-status { max-width: 350px; font-size: 0.9em; opacity: 0.8; }
-.gs-link { min-width: 260px; }
-.gs-playlist-name { max-width: 320px; }
-.gs-playlist-status { max-width: 320px; font-size: 0.9em; opacity: 0.75; }
-.gs-progress { spacing: 6px; }
-.gs-playback-options { width: 350px; spacing: 12px; }
-.gs-option-row { spacing: 16px; }
-.gs-option { border-radius: 10px; padding: 6px 12px; }
-.gs-option-label { spacing: 6px; }
-.gs-option:hover, .gs-option:focus { background-color: rgba(255, 255, 255, 0.12); }
-.gs-option:checked { background-color: rgba(30, 215, 96, 0.2); color: #1ed760; }
-.gs-volume-row { spacing: 12px; }
-.gs-volume-value { min-width: 42px; text-align: right; }
-.gs-playlist-open { padding: 3px 6px; border-radius: 6px; text-align: left; }
-.gs-playlist-open:hover, .gs-playlist-open:focus { background-color: rgba(255, 255, 255, 0.12); }
-.gs-list-heading { font-weight: bold; font-size: 0.9em; opacity: 0.7; }
+
+/* Dropdown. Note: St ignores CSS opacity; dimmed text is set on the actor in JS.
+   Buttons extend the theme's .icon-button/.button, so light/dark and accent follow GNOME. */
+.gs-card { spacing: 14px; padding: 8px 6px 4px; width: 336px; }
+.gs-header { spacing: 14px; }
+.gs-cover { border-radius: 12px; }
+.gs-cover-placeholder {
+  padding: 28px;
+  border-radius: 12px;
+  color: rgba(145, 145, 150, 1);
+  background-color: rgba(128, 128, 128, 0.18);
+}
+.gs-details { spacing: 2px; }
+.gs-song { font-weight: bold; font-size: 1.15em; }
+.gs-album { font-size: 0.9em; }
+
+.gs-banner {
+  spacing: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background-color: st-transparentize(-st-accent-color, 0.82);
+}
+.gs-banner-message { spacing: 10px; }
+.gs-banner-icon { color: -st-accent-color; }
+.gs-banner-text { font-size: 0.95em; }
+.button.gs-banner-button { padding: 4px 14px; }
+
+.gs-progress { spacing: 2px; }
+.gs-time { font-size: 0.85em; font-feature-settings: "tnum"; }
+
+.gs-transport-row { spacing: 10px; }
+.icon-button.gs-control { padding: 8px; }
+/* Flat buttons sit on both the menu and the lighter submenu, so keep them see-through. */
+.icon-button.flat.gs-control, .icon-button.flat.gs-control:insensitive { background-color: transparent; }
+.icon-button.flat.gs-control:hover, .icon-button.flat.gs-control:focus:hover { background-color: rgba(128, 128, 128, 0.22); }
+.icon-button.flat.gs-control:active { background-color: rgba(128, 128, 128, 0.32); }
+.icon-button.gs-play {
+  padding: 14px;
+  color: -st-accent-fg-color;
+  background-color: -st-accent-color;
+}
+.icon-button.gs-play:hover, .icon-button.gs-play:focus:hover { background-color: st-lighten(-st-accent-color, 6%); }
+.icon-button.gs-play:active { background-color: st-darken(-st-accent-color, 6%); }
+.icon-button.gs-play:focus { background-color: -st-accent-color; }
+.icon-button.gs-play:insensitive {
+  color: st-transparentize(-st-accent-fg-color, 0.4);
+  background-color: st-transparentize(-st-accent-color, 0.6);
+}
+.icon-button.flat.gs-toggle:checked {
+  color: -st-accent-color;
+  background-color: st-transparentize(-st-accent-color, 0.85);
+}
+.icon-button.flat.gs-toggle:checked:hover { background-color: st-transparentize(-st-accent-color, 0.75); }
+
+.gs-volume-row { spacing: 10px; padding: 0 4px; }
+.gs-volume-value { min-width: 3em; text-align: right; font-size: 0.9em; font-feature-settings: "tnum"; }
+
+/* Library */
+.gs-count { font-size: 0.9em; font-feature-settings: "tnum"; }
+.gs-toolbar { spacing: 6px; }
+.gs-playlist-status { font-size: 0.85em; }
+.gs-list-heading { font-weight: bold; font-size: 0.8em; padding-top: 4px; }
+.gs-playlist-row { padding-top: 0; padding-bottom: 0; }
+.gs-playlist-open { padding: 4px 8px 4px 4px; border-radius: 8px; }
+.gs-playlist-label { spacing: 10px; }
+.gs-playlist-cover { border-radius: 6px; }
+.gs-playlist-cover-placeholder {
+  padding: 8px;
+  color: rgba(145, 145, 150, 1);
+  background-color: rgba(128, 128, 128, 0.2);
+}
+.gs-playlist-open:hover, .gs-playlist-open:focus { background-color: rgba(128, 128, 128, 0.2); }
+.gs-playlist-name { max-width: 220px; }
+.icon-button.flat.gs-pin { padding: 6px; }
+.icon-button.flat.gs-pinned { color: -st-accent-color; }
+.gs-queue-item { spacing: 12px; }
+.gs-queue-number { min-width: 1em; text-align: right; font-feature-settings: "tnum"; }
+.gs-queue-title, .gs-queue-artist { max-width: 260px; }
+.gs-queue-artist { font-size: 0.85em; }
+.gs-empty { font-size: 0.9em; }

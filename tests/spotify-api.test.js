@@ -3,7 +3,8 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Soup from 'gi://Soup?version=3.0';
 import System from 'system';
-import {ApiError, SpotifyApi, pkceChallenge, validClientId, REGISTERED_REDIRECT} from '../spotify-api.js';
+import {ApiError, SpotifyApi, pkceChallenge, playlistImage, trustedImageUrl, validClientId,
+    REGISTERED_REDIRECT} from '../spotify-api.js';
 
 function assert(condition, message) {
     if (!condition)
@@ -95,8 +96,13 @@ async function main() {
         }
         assert(message.get_request_headers().get_one('Authorization') === 'Bearer fake-access', 'bearer API request');
         reply(message, 200, query.offset === '0'
-            ? {items: [{id: 'first', name: 'First list'}, null, {id: 'second', name: 'Second list'}], next: foreignUrl}
-            : {items: [{id: 'second', name: 'Duplicate'}, {id: 'third', name: '  '}], next: null});
+            ? {items: [{id: 'first', name: 'First list', images: [
+                {url: 'https://mosaic.scdn.co/640/big', width: 640, height: 640},
+                {url: 'https://mosaic.scdn.co/60/small', width: 60, height: 60},
+                {url: 'https://mosaic.scdn.co/300/medium', width: 300, height: 300}]},
+            null, {id: 'second', name: 'Second list', images: [{url: 'http://i.scdn.co/image/plain', width: null}]}],
+            next: foreignUrl}
+            : {items: [{id: 'second', name: 'Duplicate'}, {id: 'third', name: '  ', images: null}], next: null});
     });
     server.listen_local(0, Soup.ServerListenOptions.IPV4_ONLY);
     const base = server.get_uris()[0].to_string().replace(/\/$/, '');
@@ -106,6 +112,8 @@ async function main() {
         const list = await api.playlists(new Gio.Cancellable());
         assert(list.length === 3 && list[0].name === 'First list' && list[2].name === 'Untitled playlist',
             'paginated, deduplicated, normalized playlists');
+        assert(list[0].image === 'https://mosaic.scdn.co/60/small', 'smallest sharp cover is kept');
+        assert(!('image' in list[1]) && !('image' in list[2]), 'insecure or missing covers are omitted');
         assert(requests.filter(request => request.path === 'playlists').map(request => request.offset).join(',') === '0,50',
             'pagination offsets');
         assert(stored === 'rotated-refresh', 'refresh token rotation persisted');
@@ -146,7 +154,19 @@ async function main() {
         const occupied = new SpotifyApi(clientId, store, {callbackPort: server.get_uris()[0].get_port()});
         await expectError(() => occupied.authorize(async () => {}, new Gio.Cancellable()), 'callback-port');
         occupied.destroy();
-        print('PASS: PKCE, OAuth state, sign-in cancellation, token refresh/rotation/expiry, pagination, permissions, rate limits, and redirect protection');
+        for (const url of ['https://i.scdn.co/image/ab67', 'https://mosaic.scdn.co/60/ab67',
+            'https://image-cdn-ak.spotifycdn.com/image/ab67'])
+            assert(trustedImageUrl(url), `Spotify cover host accepted: ${url}`);
+        for (const url of ['http://i.scdn.co/image/ab67', 'https://i.scdn.co.example.com/x',
+            'https://evilscdn.co/x', 'https://scdn.co/x', 'https://user@i.scdn.co/x', 'https://i.scdn.co:8443/x',
+            'file:///etc/passwd', 'not a url', '', null, `https://i.scdn.co/${'a'.repeat(2048)}`])
+            assert(!trustedImageUrl(url), `untrusted cover link rejected: ${url}`);
+        assert(playlistImage([{url: 'https://i.scdn.co/a', width: null}]) === 'https://i.scdn.co/a',
+            'unsized uploaded cover is used');
+        assert(playlistImage([{url: 'https://evil.example/a', width: 60}, {url: 'https://i.scdn.co/b', width: 640}]) ===
+            'https://i.scdn.co/b', 'untrusted sizes are skipped');
+        assert(playlistImage(undefined) === null && playlistImage([]) === null, 'no cover');
+        print('PASS: PKCE, OAuth state, sign-in cancellation, token refresh/rotation/expiry, pagination, permissions, rate limits, redirect protection, and cover links');
     } finally {
         api.destroy();
         server.disconnect();
